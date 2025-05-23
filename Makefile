@@ -22,10 +22,10 @@ fcyc.o: fcyc.c fcyc.h
 ftimer.o: ftimer.c ftimer.h config.h
 clock.o: clock.c clock.h
 
-handin:
-	cp mm.c $(HANDINDIR)/$(TEAM)-$(VERSION)-mm.c
-
 clean:
 	rm -f *~ *.o mdriver
+
+submit:
+	zip ${USER}-handin.zip mm.c
 
 
