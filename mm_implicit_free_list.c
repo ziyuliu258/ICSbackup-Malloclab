@@ -101,7 +101,7 @@ void *mm_malloc(size_t size) {
     // We call sbrk to extend heap size
     unsigned int SbrkSize = MAX(size, PAGE_SIZE);
     void *NewPtr = mem_sbrk(SbrkSize);
-    if (!NewPtr) return NULL;
+    if (NewPtr == (void *)-1) return NULL;
     // Write metadata in newly requested space
     WRITE(NewPtr - WORD_SIZE, PACK(SbrkSize, 0));
     WRITE(mem_heap_hi() - 3 - WORD_SIZE, PACK(SbrkSize, 0));
