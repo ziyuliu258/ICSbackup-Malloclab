@@ -7,12 +7,20 @@ HANDINDIR = /afs/cs.cmu.edu/academic/class/15213-f01/malloclab/handin
 
 CC = gcc
 # CFLAGS = -Wall -O2 -m32
-CFLAGS = -Wall -g -m32
+CFLAGS = -Wall -g -O2
+
+ifeq ($(shell uname -m), x86_64)
+    CFLAGS += -m64
+else ifeq ($(shell uname -m), aarch64)
+    CFLAGS += -march=armv8-a
+endif
 
 OBJS = mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
+LDFLAGS = -lm -lrt
+
 mdriver: $(OBJS)
-	$(CC) $(CFLAGS) -o mdriver $(OBJS)
+	$(CC) $(CFLAGS) -o mdriver $(OBJS) $(LDFLAGS)
 
 mdriver.o: mdriver.c fsecs.h fcyc.h clock.h memlib.h config.h mm.h
 memlib.o: memlib.c memlib.h
