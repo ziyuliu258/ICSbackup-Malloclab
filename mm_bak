@@ -61,16 +61,14 @@ team_t team = {
 #define NEXT_BLOCK(PTR) ((void *)(PTR) + GET_SIZE(HEAD_PTR(PTR)))
 #define PREV_BLOCK(PTR) ((void *)(PTR) - GET_SIZE((void *)(PTR) - WORD_SIZE * 2))
 
-#define NEXT_AVAI_ADDR(PTR) ((void **)PTR)
-#define PREV_AVAI_ADDR(PTR) ((void **)(NEXT_AVAI_ADDR(PTR) + 1))
-
-#define READ_NEXT_AVAI_PTR(PTR) (*NEXT_AVAI_ADDR(PTR))
-#define READ_PREV_AVAI_PTR(PTR) (*PREV_AVAI_ADDR(PTR))
+#define GET_NEXT_AVAI_PTR(PTR) ((void *)(*(void **)PTR))
+#define GET_PREV_AVAI_PTR(PTR) ((void *)(*(void **)((void *)(PTR) + PTR_SIZE)))
 
 #define PAGE_SIZE (1 << 12) //4096
-#define WRITE_PTR(PTR, ADDR) (*(void **)(PTR) = ADDR)
+#define WRITE_PTR(PTR, VALUE) (*(void **)(PTR) = VALUE)
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
 // /* 
 //  * mm_init - initialize the malloc package.
 //  */
@@ -133,8 +131,8 @@ void Remove(void *ptr){
     }
     else
     {
-        void *Prev = READ_PREV_AVAI_PTR(ptr);
-        void *Next = READ_NEXT_AVAI_PTR(ptr);
+        void *Prev = GET_PREV_AVAI_PTR(ptr);
+        void *Next = GET_NEXT_AVAI_PTR(ptr);
         /*
         Prev NULL, Next NULL;
         Prev NULL, Next not NULL;
@@ -145,16 +143,16 @@ void Remove(void *ptr){
             return;
         }
         else if (Prev == NULL && Next != NULL) {
-            WRITE_PTR((void **)Next + 1, NULL);
+            WRITE_PTR(GET_PREV_AVAI_PTR(Next), NULL);
             return;
         }
         else if (Prev != NULL && Next == NULL) {
-            WRITE_PTR(Prev, NULL);
+            WRITE_PTR(GET_NEXT_AVAI_PTR(Prev), NULL);
             return;
         }
         else {
-            WRITE_PTR((void **)Next + 1, Prev);
-            WRITE_PTR(Prev, Next);
+            WRITE_PTR(GET_NEXT_AVAI_PTR(Prev), Next);
+            WRITE_PTR(GET_PREV_AVAI_PTR(Next), Prev);
             return;
         }
     }
@@ -166,37 +164,34 @@ void Insert(void *ptr) {
         return;  // 如果块已分配，直接返回
     }
 
-    void *Prev = READ_PREV_AVAI_PTR(ptr);
-    void *Next = READ_NEXT_AVAI_PTR(ptr);
+    void *Prev = GET_PREV_AVAI_PTR(ptr);  // 获取前一个空闲块的指针
+    void *Next = GET_NEXT_AVAI_PTR(ptr);  // 获取下一个空闲块的指针
 
-
-    // if (Prev == NULL && Next == NULL) {
-    //     void **p;
-    //     for (p = (void **)HeapList + 1; p < (void **)ptr ;p = (void **)GOTO_NEXT_BLOCK(p)) {
-    //         WRITE_PTR(p, ptr); 
-    //     }
-    //     void **q;
-    //     for (q = (void **)ptr + 1; GET_SIZE(HEAD_PTR(q)) > 0; q = (void **)GOTO_NEXT_BLOCK(q)) {
-    //         WRITE_PTR((void **)q + 1, ptr); // 将后续块的 prev 指针设置为 NULL
-    //     }
-    // }
-    if (Prev == NULL) {
-        void **p;
-        for (p = (void **)HeapList + 1; p < (void **)ptr ;p = (void **)NEXT_BLOCK(p)) {
-            WRITE_PTR(p, ptr); 
-        }
+    // 1. 如果当前块是唯一的空闲块
+    if (Prev == NULL && Next == NULL) {
+        WRITE_PTR(HeapList, ptr);           // 将 HeapList 设置为当前块
+        WRITE_PTR(ptr, NULL);               // 当前块的 next 指向 NULL
+        WRITE_PTR(GET_NEXT_AVAI_PTR(ptr), NULL); // 当前块的 next 指针置为 NULL
     }
-    else{
-        WRITE_PTR(Prev, ptr); // 将前一个块的 next 指针设置为当前块
+    // 2. 如果当前块是链表的头部（Prev == NULL, Next != NULL）
+    else if (Prev == NULL && Next != NULL) {
+        WRITE_PTR(HeapList, ptr);               // 将 HeapList 设置为当前块
+        WRITE_PTR(ptr, Next);                   // 当前块的 next 指向原链表的头
+        WRITE_PTR((void *)((char *)ptr + PTR_SIZE), NULL);  // 当前块的 prev 指向 NULL
+        WRITE_PTR(GET_PREV_AVAI_PTR(Next), ptr); // 原链表头的 prev 指针指向当前块
     }
-    if (Next == NULL) {
-        void **q;
-        for (q = (void **)ptr + 1; GET_SIZE(HEAD_PTR(q)) > 0; q = (void **)NEXT_BLOCK(q)) {
-            WRITE_PTR((void **)q + 1, ptr); // 将后续块的 prev 指针设置为 PTR
-        }
+    // 3. 如果当前块是链表的尾部（Prev != NULL, Next == NULL）
+    else if (Prev != NULL && Next == NULL) {
+        WRITE_PTR(GET_NEXT_AVAI_PTR(Prev), ptr); // 前一个块的 next 指向当前块
+        WRITE_PTR(ptr, NULL);                    // 当前块的 next 指向 NULL
+        WRITE_PTR((void *)((char *)ptr + PTR_SIZE), Prev); // 当前块的 prev 指向前块
     }
-    else{
-        WRITE_PTR((void **)Next + 1, ptr); // 将后续块的 prev 指针设置为当前块
+    // 4. 如果当前块在链表中间（Prev != NULL, Next != NULL）
+    else {
+        WRITE_PTR(GET_NEXT_AVAI_PTR(Prev), ptr); // 前一个块的 next 指向当前块
+        WRITE_PTR(ptr, Next);                    // 当前块的 next 指向后块
+        WRITE_PTR((void *)((char *)ptr + PTR_SIZE), Prev); // 当前块的 prev 指向前块
+        WRITE_PTR(GET_PREV_AVAI_PTR(Next), ptr); // 后一个块的 prev 指向当前块
     }
 }
 
@@ -208,6 +203,7 @@ void *Merge(void *Ptr) {
     unsigned int PrevAlloc = IS_ALLOC(HEAD_PTR(Prev)); 
     unsigned int NextAlloc = IS_ALLOC(HEAD_PTR(Next));
     unsigned int Size = GET_SIZE(HEAD_PTR(Ptr));
+
     // Case 1: 前后都被占用
     if(PrevAlloc && NextAlloc) {
         WRITE(HEAD_PTR(Ptr), PACK(Size, 0));
@@ -218,31 +214,24 @@ void *Merge(void *Ptr) {
     // Case 2: 前占用,后空闲
     if(PrevAlloc && !NextAlloc) {
         Size += GET_SIZE(HEAD_PTR(Next));
-        Remove(Next);
         WRITE(HEAD_PTR(Ptr), PACK(Size, 0));
         WRITE(TAIL_PTR(Next), PACK(Size, 0));
-        Insert(Ptr);
         return Ptr;
     }
     
     // Case 3: 前空闲,后占用
     if(!PrevAlloc && NextAlloc) {
         Size += GET_SIZE(HEAD_PTR(Prev));
-        Remove(Prev);
         WRITE(HEAD_PTR(Prev), PACK(Size, 0));
         WRITE(TAIL_PTR(Ptr), PACK(Size, 0));
-        Insert(Prev);
         return Prev;
     }
     
     // Case 4: 前后都空闲
     if(!PrevAlloc && !NextAlloc) {
         Size += GET_SIZE(HEAD_PTR(Prev)) + GET_SIZE(HEAD_PTR(Next));
-        Remove(Prev);
-        Remove(Next);
         WRITE(HEAD_PTR(Prev), PACK(Size, 0));
         WRITE(TAIL_PTR(Next), PACK(Size, 0));
-        Insert(Prev);
         return Prev;
     }
 
@@ -251,10 +240,9 @@ void *Merge(void *Ptr) {
 
 void Place(void *Ptr, unsigned int Size) {
     unsigned int BlockSize = GET_SIZE(HEAD_PTR(Ptr));
-    Remove(Ptr);
     
-    // 如果分割后剩余空间不足以放置一个新的块(至少24字节),则分配整个块
-    if(BlockSize - Size < 24) {
+    // 如果分割后剩余空间不足以放置一个新的块(至少8字节),则分配整个块
+    if(BlockSize - Size < 8) {
         WRITE(HEAD_PTR(Ptr), PACK(BlockSize, 1));
         WRITE(TAIL_PTR(Ptr), PACK(BlockSize, 1));
         return;
@@ -266,33 +254,33 @@ void Place(void *Ptr, unsigned int Size) {
     void *Next = NEXT_BLOCK(Ptr);
     WRITE(HEAD_PTR(Next), PACK(BlockSize - Size, 0));
     WRITE(TAIL_PTR(Next), PACK(BlockSize - Size, 0));
-    Insert(Next);
 }
 
 
 void *FirstFit(size_t Size) {
-    void *Ptr = READ_NEXT_AVAI_PTR(HeapList + WORD_SIZE * 2);
+    void *Ptr = GET_NEXT_AVAI_PTR(HeapList);
     
     // 遍历整个堆
     while(Ptr != NULL) {
         if(GET_SIZE(HEAD_PTR(Ptr)) >= Size) {
             return Ptr;
         }
-        Ptr = READ_NEXT_AVAI_PTR(Ptr);
+        Ptr = GET_NEXT_AVAI_PTR(Ptr);
     }
     
     return NULL;
 }
 
 int mm_init() {
+    // Request for 16 bytes space
     HeapList = mem_sbrk(WORD_SIZE << 3); //32B
     if (HeapList == (void *)-1) return -1;
     // Fill in metadata as initial space
-    WRITE(HeapList, 0); // prologue: 0000 3001 NULL(8) ADDR(8) 3001 | tail: 0001
+    WRITE(HeapList, 0); // 0000 3001 NULL ADDR 3001
     // Prologue block
     WRITE(HeapList + WORD_SIZE, PACK(24, 1)); // Prologue's header
-    WRITE_PTR(HeapList + WORD_SIZE * 2, NULL); // Prologue's NEXT pointer
-    WRITE_PTR(HeapList + PTR_SIZE + WORD_SIZE * 2, NULL);
+    WRITE_PTR(HeapList + WORD_SIZE * 2, NULL); // Prologue's prev pointer
+    WRITE_PTR(HeapList + PTR_SIZE + WORD_SIZE * 2, HeapList + PTR_SIZE * 2 + WORD_SIZE * 3);
     WRITE(HeapList + WORD_SIZE * 2 + PTR_SIZE * 2, PACK(24, 1));
     WRITE(HeapList + PTR_SIZE * 2 + WORD_SIZE * 3, PACK(0, 1));
     return 0;
